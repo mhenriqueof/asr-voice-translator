@@ -1,0 +1,20 @@
+cat > pyproject.toml << 'EOF'
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # erros de estilo (pycodestyle)
+    "F",   # erros lógicos (pyflakes): imports não usados, variáveis indefinidas
+    "I",   # ordenação de imports (isort)
+    "B",   # boas práticas (flake8-bugbear)
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+EOF
