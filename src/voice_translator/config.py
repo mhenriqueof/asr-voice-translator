@@ -41,4 +41,4 @@ SAMPLE_RATE = 16_000  # Hz — required by Whisper
 # ---------------------------------------------------------------------------
 
 APP_TITLE = "🎙️ Voice Translator"
-APP_DESCRIPTION = "Transcreva e traduza áudio em tempo real usando Whisper."
+APP_DESCRIPTION = "Transcribe and translate audio in real time using Whisper."
