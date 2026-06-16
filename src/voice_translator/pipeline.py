@@ -1,0 +1,85 @@
+"""
+Pipeline module for Voice Translator.
+Orchestrates transcription and translation into a single cohesive workflow.
+"""
+
+import logging
+
+from transformers import pipeline as ASRPipeline
+
+from voice_translator.config import DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE
+from voice_translator.transcription import load_transcriber, transcribe
+from voice_translator.translation import load_translator, translate
+
+logger = logging.getLogger(__name__)
+
+def build_pipeline(
+    whisper_model_id: str | None = None,
+    source_language: str = DEFAULT_SOURCE_LANGUAGE,
+    target_language: str = DEFAULT_TARGET_LANGUAGE,
+) -> dict:
+    """
+    Load all models and return a pipeline context.
+
+    Args:
+        whisper_model_id: Hugging Face model identifier for Whisper.
+                          If None, uses the default from config.
+        source_language: ISO 639-1 source language code.
+        target_language: ISO 639-1 target language code.
+
+    Returns:
+        A dict containing loaded models and configuration.
+    """
+    logger.info(
+        "Building pipeline (source=%s, target=%s).",
+        source_language,
+        target_language,
+    )
+
+    asr = load_transcriber(whisper_model_id) if whisper_model_id else load_transcriber()
+    translation_model, translation_tokenizer = load_translator(source_language, target_language)
+
+    return {
+        "asr": asr,
+        "translation_model": translation_model,
+        "translation_tokenizer": translation_tokenizer,
+        "source_language": source_language,
+        "target_language": target_language,
+    }
+    
+def run_pipeline(
+    pipeline_ctx: dict,
+    audio_path: str,
+    translate_audio: bool = True,
+) -> dict:
+    """
+    Run the full transcription and (optionally) translation pipeline.
+
+    Args:
+        pipeline_ctx: A pipeline context returned by build_pipeline.
+        audio_path: Path to the audio file to process.
+        translate_audio: Whether to translate the transcribed text.
+
+    Returns:
+        A dict with 'transcription' and (optionally) 'translation' keys.
+    """
+    logger.info("Running pipeline on '%s'.", audio_path)
+
+    transcription = transcribe(
+        pipeline_ctx["asr"],
+        audio_path,
+        source_language=pipeline_ctx["source_language"],
+    )
+
+    result = {"transcription": transcription}
+
+    if translate_audio:
+        translation = translate(
+            pipeline_ctx["translation_model"],
+            pipeline_ctx["translation_tokenizer"],
+            transcription,
+        )
+        result["translation"] = translation
+
+    logger.info("Pipeline complete.")
+    return result
