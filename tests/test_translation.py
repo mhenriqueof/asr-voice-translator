@@ -4,14 +4,12 @@ Tests for the translation module.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from voice_translator.translation import build_model_id, load_translator, translate
-
 
 # ---------------------------------------------------------------------------
 # build_model_id
 # ---------------------------------------------------------------------------
+
 
 def test_build_model_id_format():
     result = build_model_id("pt", "en")
@@ -26,6 +24,7 @@ def test_build_model_id_different_pair():
 # ---------------------------------------------------------------------------
 # load_translator
 # ---------------------------------------------------------------------------
+
 
 @patch("voice_translator.translation.MarianMTModel.from_pretrained")
 @patch("voice_translator.translation.MarianTokenizer.from_pretrained")
@@ -52,6 +51,7 @@ def test_load_translator_calls_correct_model_id(mock_tokenizer, mock_model):
 # ---------------------------------------------------------------------------
 # translate
 # ---------------------------------------------------------------------------
+
 
 def test_translate_returns_string():
     mock_model = MagicMock()
@@ -92,4 +92,3 @@ def test_translate_empty_string():
     result = translate(mock_model, mock_tokenizer, "")
 
     assert result == ""
-    

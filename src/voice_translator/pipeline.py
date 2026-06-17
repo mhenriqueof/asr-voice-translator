@@ -5,13 +5,12 @@ Orchestrates transcription and translation into a single cohesive workflow.
 
 import logging
 
-from transformers import pipeline as ASRPipeline
-
 from voice_translator.config import DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE
 from voice_translator.transcription import load_transcriber, transcribe
 from voice_translator.translation import load_translator, translate
 
 logger = logging.getLogger(__name__)
+
 
 def build_pipeline(
     whisper_model_id: str | None = None,
@@ -37,7 +36,9 @@ def build_pipeline(
     )
 
     asr = load_transcriber(whisper_model_id) if whisper_model_id else load_transcriber()
-    translation_model, translation_tokenizer = load_translator(source_language, target_language)
+    translation_model, translation_tokenizer = load_translator(
+        source_language, target_language
+    )
 
     return {
         "asr": asr,
@@ -46,7 +47,8 @@ def build_pipeline(
         "source_language": source_language,
         "target_language": target_language,
     }
-    
+
+
 def run_pipeline(
     pipeline_ctx: dict,
     audio_path: str,

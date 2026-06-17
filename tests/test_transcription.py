@@ -4,14 +4,12 @@ Tests for the transcription module.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from voice_translator.transcription import get_device, load_transcriber, transcribe
-
 
 # ---------------------------------------------------------------------------
 # get_device
 # ---------------------------------------------------------------------------
+
 
 def test_get_device_returns_string():
     device = get_device()
@@ -27,12 +25,11 @@ def test_get_device_valid_value():
 # load_transcriber
 # ---------------------------------------------------------------------------
 
+
 @patch("voice_translator.transcription.AutoModelForSpeechSeq2Seq.from_pretrained")
 @patch("voice_translator.transcription.AutoProcessor.from_pretrained")
 @patch("voice_translator.transcription.pipeline")
-def test_load_transcriber_returns_pipeline(
-    mock_pipeline, mock_processor, mock_model
-):
+def test_load_transcriber_returns_pipeline(mock_pipeline, mock_processor, mock_model):
     mock_pipeline.return_value = MagicMock()
     result = load_transcriber("openai/whisper-base")
     assert result is mock_pipeline.return_value
@@ -52,6 +49,7 @@ def test_load_transcriber_calls_pipeline_with_asr_task(
 # ---------------------------------------------------------------------------
 # transcribe
 # ---------------------------------------------------------------------------
+
 
 def test_transcribe_returns_stripped_text():
     mock_pipeline = MagicMock()
@@ -80,4 +78,3 @@ def test_transcribe_omits_language_when_none():
 
     _, call_kwargs = mock_pipeline.call_args
     assert call_kwargs["generate_kwargs"] == {}
-    

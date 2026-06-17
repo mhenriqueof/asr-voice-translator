@@ -3,8 +3,6 @@ Configuration module for Voice Translator.
 Centralizes constants and settings used across the application.
 """
 
-from dataclasses import dataclass
-
 
 # ---------------------------------------------------------------------------
 # Model settings

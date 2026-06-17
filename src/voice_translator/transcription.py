@@ -8,13 +8,15 @@ import logging
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
-from voice_translator.config import SAMPLE_RATE, WHISPER_MODEL_ID
+from voice_translator.config import WHISPER_MODEL_ID
 
 logger = logging.getLogger(__name__)
+
 
 def get_device() -> str:
     """Return the best available device for inference."""
     return "cuda" if torch.cuda.is_available() else "cpu"
+
 
 def load_transcriber(model_id: str = WHISPER_MODEL_ID) -> pipeline:
     """
@@ -49,6 +51,7 @@ def load_transcriber(model_id: str = WHISPER_MODEL_ID) -> pipeline:
     logger.info("Whisper model loaded successfully.")
     return asr_pipeline
 
+
 def transcribe(
     asr_pipeline: pipeline,
     audio_path: str,
@@ -66,7 +69,9 @@ def transcribe(
     Returns:
         Transcribed text as a string.
     """
-    logger.info("Transcribing file '%s' (language=%s).", audio_path, source_language or "auto")
+    logger.info(
+        "Transcribing file '%s' (language=%s).", audio_path, source_language or "auto"
+    )
 
     generate_kwargs = {}
     if source_language:
