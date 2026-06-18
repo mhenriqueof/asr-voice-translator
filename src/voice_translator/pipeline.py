@@ -23,8 +23,8 @@ def build_pipeline(
     Args:
         whisper_model_id: Hugging Face model identifier for Whisper.
                           If None, uses the default from config.
-        source_language: ISO 639-1 source language code.
-        target_language: ISO 639-1 target language code.
+        source_language: BCP-47 source language code (e.g. 'por_Latn').
+        target_language: BCP-47 target language code (e.g. 'eng_Latn').
 
     Returns:
         A dict containing loaded models and configuration.
@@ -36,9 +36,7 @@ def build_pipeline(
     )
 
     asr = load_transcriber(whisper_model_id) if whisper_model_id else load_transcriber()
-    translation_model, translation_tokenizer = load_translator(
-        source_language, target_language
-    )
+    translation_model, translation_tokenizer = load_translator()
 
     return {
         "asr": asr,
@@ -53,6 +51,7 @@ def run_pipeline(
     pipeline_ctx: dict,
     audio_path: str,
     translate_audio: bool = True,
+    whisper_language: str | None = None,
 ) -> dict:
     """
     Run the full transcription and (optionally) translation pipeline.
@@ -61,6 +60,8 @@ def run_pipeline(
         pipeline_ctx: A pipeline context returned by build_pipeline.
         audio_path: Path to the audio file to process.
         translate_audio: Whether to translate the transcribed text.
+        whisper_language: ISO 639-1 language code for Whisper (e.g. 'pt').
+                          If None, Whisper auto-detects the language.
 
     Returns:
         A dict with 'transcription' and (optionally) 'translation' keys.
@@ -70,7 +71,7 @@ def run_pipeline(
     transcription = transcribe(
         pipeline_ctx["asr"],
         audio_path,
-        source_language=pipeline_ctx["source_language"],
+        source_language=whisper_language,
     )
 
     result = {"transcription": transcription}
@@ -80,6 +81,8 @@ def run_pipeline(
             pipeline_ctx["translation_model"],
             pipeline_ctx["translation_tokenizer"],
             transcription,
+            source_language=pipeline_ctx["source_language"],
+            target_language=pipeline_ctx["target_language"],
         )
         result["translation"] = translation
 

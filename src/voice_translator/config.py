@@ -3,14 +3,28 @@ Configuration module for Voice Translator.
 Centralizes constants and settings used across the application.
 """
 
-
 # ---------------------------------------------------------------------------
 # Model settings
 # ---------------------------------------------------------------------------
 
 WHISPER_MODEL_ID = "openai/whisper-base"
 
+NLLB_MODEL_ID = "facebook/nllb-200-distilled-600M"
+
+# NLLB uses BCP-47 language codes with script suffix
 SUPPORTED_LANGUAGES: dict[str, str] = {
+    "Português": "por_Latn",
+    "English": "eng_Latn",
+    "Español": "spa_Latn",
+    "Français": "fra_Latn",
+    "Deutsch": "deu_Latn",
+    "Italiano": "ita_Latn",
+    "日本語": "jpn_Jpan",
+    "中文": "zho_Hans",
+}
+
+# Whisper uses standard ISO 639-1 codes (separate from NLLB codes)
+WHISPER_LANGUAGE_CODES: dict[str, str] = {
     "Português": "pt",
     "English": "en",
     "Español": "es",
@@ -21,10 +35,9 @@ SUPPORTED_LANGUAGES: dict[str, str] = {
     "中文": "zh",
 }
 
-DEFAULT_SOURCE_LANGUAGE = "pt"
-DEFAULT_TARGET_LANGUAGE = "en"
-
-TRANSLATION_MODEL_ID = "Helsinki-NLP/opus-mt-{src}-{tgt}"
+DEFAULT_SOURCE_LANGUAGE = "por_Latn"
+DEFAULT_TARGET_LANGUAGE = "eng_Latn"
+DEFAULT_WHISPER_LANGUAGE = "pt"
 
 
 # ---------------------------------------------------------------------------
@@ -39,4 +52,6 @@ SAMPLE_RATE = 16_000  # Hz — required by Whisper
 # ---------------------------------------------------------------------------
 
 APP_TITLE = "🎙️ Voice Translator"
-APP_DESCRIPTION = "Transcribe and translate audio in real time using Whisper."
+APP_DESCRIPTION = (
+    "Transcribe and translate audio in real time using Whisper and NLLB-200."
+)
