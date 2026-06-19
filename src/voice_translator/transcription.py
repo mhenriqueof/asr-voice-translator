@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def get_device() -> str:
     """Return the best available device for inference."""
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    return "cpu"
 
 
 def load_transcriber(model_id: str = WHISPER_MODEL_ID) -> pipeline:
