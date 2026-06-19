@@ -4,6 +4,11 @@ Transcribes and optionally translates audio using Whisper and NLLB-200.
 """
 
 import logging
+import sys
+from pathlib import Path
+
+# Ensure the src/ package is importable regardless of how the app is launched
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import gradio as gr
 
