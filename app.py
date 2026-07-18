@@ -164,4 +164,4 @@ with gr.Blocks(title=APP_TITLE) as demo:
         outputs=[transcription_output, translation_output],
     )
 
-demo.launch()
+demo.launch(share=True)
