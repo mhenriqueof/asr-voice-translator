@@ -11,6 +11,7 @@ import os
 
 DEVICE = os.getenv("VOICE_TRANSLATOR_DEVICE", "cpu")  # "cpu" or "cuda"
 
+
 # ---------------------------------------------------------------------------
 # Model settings
 # ---------------------------------------------------------------------------
@@ -46,6 +47,16 @@ WHISPER_LANGUAGE_CODES: dict[str, str] = {
 DEFAULT_SOURCE_LANGUAGE = "por_Latn"
 DEFAULT_TARGET_LANGUAGE = "eng_Latn"
 DEFAULT_WHISPER_LANGUAGE = "pt"
+
+
+# ---------------------------------------------------------------------
+# Streaming settings
+# ---------------------------------------------------------------------
+
+STREAM_SAMPLE_RATE = 16_000  # Hz, must match Whisper's expected input
+SILENCE_DURATION_S = 0.5  # seconds of silence to close a chunk
+MIN_CHUNK_DURATION_S = 1.0  # minimum audio length before transcribing
+MAX_CHUNK_DURATION_S = 8.0  # force-close a chunk after this long
 
 
 # ---------------------------------------------------------------------------
