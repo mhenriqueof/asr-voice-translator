@@ -3,6 +3,14 @@ Configuration module for Voice Translator.
 Centralizes constants and settings used across the application.
 """
 
+import os
+
+# ---------------------------------------------------------------------
+# Device settings
+# ---------------------------------------------------------------------
+
+DEVICE = os.getenv("VOICE_TRANSLATOR_DEVICE", "cpu") # "cpu" or "cuda"
+
 # ---------------------------------------------------------------------------
 # Model settings
 # ---------------------------------------------------------------------------

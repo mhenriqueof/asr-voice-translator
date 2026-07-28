@@ -8,14 +8,14 @@ import logging
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
-from voice_translator.config import WHISPER_MODEL_ID
+from voice_translator.config import DEVICE, WHISPER_MODEL_ID
 
 logger = logging.getLogger(__name__)
 
 
 def get_device() -> str:
     """Return the best available device for inference."""
-    return "cpu"
+    return DEVICE
 
 
 def load_transcriber(model_id: str = WHISPER_MODEL_ID) -> pipeline:
