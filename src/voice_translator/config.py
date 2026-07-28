@@ -9,13 +9,13 @@ import os
 # Device settings
 # ---------------------------------------------------------------------
 
-DEVICE = os.getenv("VOICE_TRANSLATOR_DEVICE", "cpu") # "cpu" or "cuda"
+DEVICE = os.getenv("VOICE_TRANSLATOR_DEVICE", "cpu")  # "cpu" or "cuda"
 
 # ---------------------------------------------------------------------------
 # Model settings
 # ---------------------------------------------------------------------------
 
-WHISPER_MODEL_ID = "openai/whisper-base"
+WHISPER_MODEL_SIZE = "base"
 
 NLLB_MODEL_ID = "facebook/nllb-200-distilled-600M"
 

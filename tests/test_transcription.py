@@ -4,21 +4,25 @@ Tests for the transcription module.
 
 from unittest.mock import MagicMock, patch
 
-from voice_translator.transcription import get_device, load_transcriber, transcribe
+from voice_translator.transcription import (
+    get_compute_type,
+    load_transcriber,
+    transcribe,
+)
 
 # ---------------------------------------------------------------------------
-# get_device
+# get_compute_type
 # ---------------------------------------------------------------------------
 
 
-def test_get_device_returns_string():
-    device = get_device()
-    assert isinstance(device, str)
+@patch("voice_translator.transcription.DEVICE", "cpu")
+def test_get_compute_type_returns_int8_on_cpu():
+    assert get_compute_type() == "int8"
 
 
-def test_get_device_valid_value():
-    device = get_device()
-    assert device in ("cuda", "cpu")
+@patch("voice_translator.transcription.DEVICE", "cuda")
+def test_get_compute_type_returns_float16_on_cuda():
+    assert get_compute_type() == "float16"
 
 
 # ---------------------------------------------------------------------------
@@ -26,24 +30,25 @@ def test_get_device_valid_value():
 # ---------------------------------------------------------------------------
 
 
-@patch("voice_translator.transcription.AutoModelForSpeechSeq2Seq.from_pretrained")
-@patch("voice_translator.transcription.AutoProcessor.from_pretrained")
-@patch("voice_translator.transcription.pipeline")
-def test_load_transcriber_returns_pipeline(mock_pipeline, mock_processor, mock_model):
-    mock_pipeline.return_value = MagicMock()
-    result = load_transcriber("openai/whisper-base")
-    assert result is mock_pipeline.return_value
+@patch("voice_translator.transcription.WhisperModel")
+def test_load_transcriber_returns_model(mock_whisper_model):
+    mock_whisper_model.return_value = MagicMock()
+    result = load_transcriber("base")
+    assert result is mock_whisper_model.return_value
 
 
-@patch("voice_translator.transcription.AutoModelForSpeechSeq2Seq.from_pretrained")
-@patch("voice_translator.transcription.AutoProcessor.from_pretrained")
-@patch("voice_translator.transcription.pipeline")
-def test_load_transcriber_calls_pipeline_with_asr_task(
-    mock_pipeline, mock_processor, mock_model
-):
-    load_transcriber("openai/whisper-base")
-    call_kwargs = mock_pipeline.call_args
-    assert call_kwargs.kwargs["task"] == "automatic-speech-recognition"
+@patch("voice_translator.transcription.WhisperModel")
+def test_load_transcriber_calls_whisper_model_with_size(mock_whisper_model):
+    load_transcriber("base")
+    call_args = mock_whisper_model.call_args
+    assert call_args.args[0] == "base"
+
+
+@patch("voice_translator.transcription.WhisperModel")
+def test_load_transcriber_uses_configured_device(mock_whisper_model):
+    load_transcriber("base")
+    call_kwargs = mock_whisper_model.call_args.kwargs
+    assert call_kwargs["device"] in ("cuda", "cpu")
 
 
 # ---------------------------------------------------------------------------
@@ -51,30 +56,42 @@ def test_load_transcriber_calls_pipeline_with_asr_task(
 # ---------------------------------------------------------------------------
 
 
-def test_transcribe_returns_stripped_text():
-    mock_pipeline = MagicMock()
-    mock_pipeline.return_value = {"text": "  Hello world  "}
+def _make_segment(text: str) -> MagicMock:
+    segment = MagicMock()
+    segment.text = text
+    return segment
 
-    result = transcribe(mock_pipeline, "fake/path.wav")
+
+def test_transcribe_returns_joined_stripped_text():
+    mock_model = MagicMock()
+    mock_info = MagicMock(language="en", language_probability=0.99)
+    mock_model.transcribe.return_value = (
+        [_make_segment("  Hello  "), _make_segment("world  ")],
+        mock_info,
+    )
+
+    result = transcribe(mock_model, "fake/path.wav")
 
     assert result == "Hello world"
 
 
 def test_transcribe_passes_language_when_provided():
-    mock_pipeline = MagicMock()
-    mock_pipeline.return_value = {"text": "Olá mundo"}
+    mock_model = MagicMock()
+    mock_info = MagicMock(language="pt", language_probability=0.95)
+    mock_model.transcribe.return_value = ([_make_segment("Olá mundo")], mock_info)
 
-    transcribe(mock_pipeline, "fake/path.wav", source_language="pt")
+    transcribe(mock_model, "fake/path.wav", source_language="pt")
 
-    _, call_kwargs = mock_pipeline.call_args
-    assert call_kwargs["generate_kwargs"]["language"] == "pt"
+    call_kwargs = mock_model.transcribe.call_args.kwargs
+    assert call_kwargs["language"] == "pt"
 
 
 def test_transcribe_omits_language_when_none():
-    mock_pipeline = MagicMock()
-    mock_pipeline.return_value = {"text": "Hello"}
+    mock_model = MagicMock()
+    mock_info = MagicMock(language="en", language_probability=0.9)
+    mock_model.transcribe.return_value = ([_make_segment("Hello")], mock_info)
 
-    transcribe(mock_pipeline, "fake/path.wav", source_language=None)
+    transcribe(mock_model, "fake/path.wav", source_language=None)
 
-    _, call_kwargs = mock_pipeline.call_args
-    assert call_kwargs["generate_kwargs"] == {}
+    call_kwargs = mock_model.transcribe.call_args.kwargs
+    assert call_kwargs["language"] is None

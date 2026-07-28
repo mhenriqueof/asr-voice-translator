@@ -1,67 +1,56 @@
 """
 Transcription module for Voice Translator.
-Handles audio transcription using OpenAI's Whisper model via Hugging Face Transformers.
+Handles audio transcription using faster-whisper (CTranslate2-based Whisper).
 """
 
 import logging
 
-import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from faster_whisper import WhisperModel
 
-from voice_translator.config import DEVICE, WHISPER_MODEL_ID
+from voice_translator.config import DEVICE, WHISPER_MODEL_SIZE
 
 logger = logging.getLogger(__name__)
 
 
-def get_device() -> str:
-    """Return the best available device for inference."""
-    return DEVICE
+def get_compute_type() -> str:
+    """Return the best compute type for the configured device."""
+    return "float16" if DEVICE == "cuda" else "int8"
 
 
-def load_transcriber(model_id: str = WHISPER_MODEL_ID) -> pipeline:
+def load_transcriber(model_size: str = WHISPER_MODEL_SIZE) -> WhisperModel:
     """
-    Load and return a Whisper ASR pipeline.
+    Load and return a faster-whisper model.
 
     Args:
-        model_id: Hugging Face model identifier.
+        model_size: Whisper model size identifier (e.g. 'base', 'small').
 
     Returns:
-        A Hugging Face pipeline configured for automatic speech recognition.
+        A loaded WhisperModel instance.
     """
-    device = get_device()
-    logger.info("Loading Whisper model '%s' on device '%s'.", model_id, device)
-
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        model_id,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        low_cpu_mem_usage=True,
-    )
-    model.to(device)
-
-    processor = AutoProcessor.from_pretrained(model_id)
-
-    asr_pipeline = pipeline(
-        task="automatic-speech-recognition",
-        model=model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-        device=device,
+    compute_type = get_compute_type()
+    logger.info(
+        "Loading faster-whisper model '%s' on device '%s' (compute_type=%s).",
+        model_size,
+        DEVICE,
+        compute_type,
     )
 
-    logger.info("Whisper model loaded successfully.")
-    return asr_pipeline
+    model = WhisperModel(model_size, device=DEVICE, compute_type=compute_type)
+
+    logger.info("faster-whisper model loaded successfully.")
+    return model
 
 
 def transcribe(
-    asr_pipeline: pipeline,
+    model: WhisperModel,
     audio_path: str,
     source_language: str | None = None,
 ) -> str:
     """
-    Transcribe an audio file using the provided ASR pipeline.
+    Transcribe an audio file using the provided faster-whisper model.
 
     Args:
-        asr_pipeline: A loaded Hugging Face ASR pipeline.
+        model: A loaded WhisperModel instance.
         audio_path: Path to the audio file (wav, mp3, etc.).
         source_language: ISO 639-1 language code (e.g. 'pt', 'en').
                          If None, Whisper auto-detects the language.
@@ -73,12 +62,16 @@ def transcribe(
         "Transcribing file '%s' (language=%s).", audio_path, source_language or "auto"
     )
 
-    generate_kwargs = {}
-    if source_language:
-        generate_kwargs["language"] = source_language
+    segments, info = model.transcribe(audio_path, language=source_language)
 
-    result = asr_pipeline(audio_path, generate_kwargs=generate_kwargs)
+    # segments is a generator — must be consumed to actually run inference
+    transcription = " ".join(segment.text.strip() for segment in segments).strip()
 
-    transcription: str = result["text"].strip()
-    logger.info("Transcription complete: %d characters.", len(transcription))
+    logger.info(
+        "Transcription complete: %d characters "
+        "(detected language=%s, probability=%.2f).",
+        len(transcription),
+        info.language,
+        info.language_probability,
+    )
     return transcription
