@@ -11,16 +11,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import gradio as gr
+import numpy as np
+from scipy.signal import resample_poly
 
 from voice_translator.config import (
     APP_DESCRIPTION,
     APP_TITLE,
     DEFAULT_SOURCE_LANGUAGE,
     DEFAULT_TARGET_LANGUAGE,
+    DEFAULT_WHISPER_LANGUAGE,
+    STREAM_SAMPLE_RATE,
     SUPPORTED_LANGUAGES,
     WHISPER_LANGUAGE_CODES,
 )
 from voice_translator.pipeline import build_pipeline, run_pipeline
+from voice_translator.streaming import AudioStreamer, StreamState
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,9 +41,18 @@ pipeline_ctx = build_pipeline(
 )
 logger.info("Models loaded successfully.")
 
+# ---------------------------------------------------------------------------
+# Streaming setup (once at startup, reuses the same ASR model)
+# ---------------------------------------------------------------------------
+
+streamer = AudioStreamer(
+    model=pipeline_ctx["asr"],
+    source_language=DEFAULT_WHISPER_LANGUAGE,
+)
+
 
 # ---------------------------------------------------------------------------
-# Gradio event handlers
+# Gradio event handlers — batch mode
 # ---------------------------------------------------------------------------
 
 
@@ -98,53 +112,115 @@ def process_audio(
 
 
 # ---------------------------------------------------------------------------
+# Gradio event handlers — streaming mode
+# ---------------------------------------------------------------------------
+
+
+def process_streaming_chunk(
+    stream_state: StreamState | None,
+    new_chunk: tuple[int, np.ndarray] | None,
+) -> tuple[StreamState, str]:
+    """
+    Handle one incoming audio chunk from Gradio's streaming microphone.
+
+    Args:
+        stream_state: Buffer state carried between calls (None on first call).
+        new_chunk: (sample_rate, audio_array) as delivered by Gradio, or None
+            when the stream stops.
+
+    Returns:
+        A tuple of (updated_state, accumulated_text) to display.
+    """
+    state = stream_state or StreamState()
+
+    if new_chunk is None:
+        return state, state.accumulated_text
+
+    sample_rate, audio_array = new_chunk
+    audio_float = audio_array.astype(np.float32) / 32768.0
+
+    if sample_rate != STREAM_SAMPLE_RATE:
+        audio_float = resample_poly(audio_float, STREAM_SAMPLE_RATE, sample_rate)
+
+    chunk_duration_s = len(audio_float) / STREAM_SAMPLE_RATE
+    updated_state, accumulated_text = streamer.push_chunk(
+        state, audio_float, chunk_duration_s
+    )
+
+    return updated_state, accumulated_text
+
+
+def clear_streaming_state() -> tuple[StreamState, str]:
+    """Reset streaming state when the user starts a new recording session."""
+    return StreamState(), ""
+
+
+# ---------------------------------------------------------------------------
 # Gradio UI
 # ---------------------------------------------------------------------------
 
 language_names = list(SUPPORTED_LANGUAGES.keys())
 
-with gr.Blocks(title=APP_TITLE) as demo:
-    gr.Markdown(f"# {APP_TITLE}")
-    gr.Markdown(APP_DESCRIPTION)
+with gr.Blocks(title=APP_TITLE) as demo:  # type: ignore
+    gr.Markdown(f"# {APP_TITLE}")  # type: ignore
+    gr.Markdown(APP_DESCRIPTION)  # type: ignore
 
-    with gr.Row():
-        source_dropdown = gr.Dropdown(
+    with gr.Row():  # type: ignore
+        source_dropdown = gr.Dropdown(  # type: ignore
             choices=language_names,
             value="Português",
             label="Source Language",
         )
-        target_dropdown = gr.Dropdown(
+        target_dropdown = gr.Dropdown(  # type: ignore
             choices=language_names,
             value="English",
             label="Target Language",
         )
 
-    audio_input = gr.Audio(
+    audio_input = gr.Audio(  # type: ignore
         sources=["microphone", "upload"],
         type="filepath",
         label="Audio Input",
     )
 
-    translate_checkbox = gr.Checkbox(
+    translate_checkbox = gr.Checkbox(  # type: ignore
         value=True,
         label="Translate",
     )
 
-    submit_btn = gr.Button("Transcribe / Translate", variant="primary")
+    submit_btn = gr.Button("Transcribe / Translate", variant="primary")  # type: ignore
 
-    with gr.Row():
-        transcription_output = gr.Textbox(
+    with gr.Row():  # type: ignore
+        transcription_output = gr.Textbox(  # type: ignore
             label="Transcription",
             placeholder="Transcription will appear here...",
             lines=4,
         )
-        translation_output = gr.Textbox(
+        translation_output = gr.Textbox(  # type: ignore
             label="Translation",
             placeholder="Translation will appear here...",
             lines=4,
         )
 
-    # --- events ---
+    gr.Markdown("---")  # type: ignore
+    gr.Markdown("## Real-time Streaming (experimental)")  # type: ignore
+
+    stream_audio_input = gr.Audio(  # type: ignore
+        sources=["microphone"],
+        streaming=True,
+        type="numpy",
+        label="Speak now",
+    )
+
+    streaming_output = gr.Textbox(  # type: ignore
+        label="Live Transcription",
+        placeholder="Transcription will appear here as you speak...",
+        lines=4,
+    )
+
+    stream_state = gr.State(value=StreamState())  # type: ignore
+
+    # --- events: batch mode ---
 
     source_dropdown.change(
         fn=on_language_change,
@@ -162,6 +238,20 @@ with gr.Blocks(title=APP_TITLE) as demo:
         fn=process_audio,
         inputs=[audio_input, translate_checkbox, source_dropdown],
         outputs=[transcription_output, translation_output],
+    )
+
+    # --- events: streaming mode ---
+
+    stream_audio_input.stream(
+        fn=process_streaming_chunk,
+        inputs=[stream_state, stream_audio_input],
+        outputs=[stream_state, streaming_output],
+    )
+
+    stream_audio_input.start_recording(
+        fn=clear_streaming_state,
+        inputs=[],
+        outputs=[stream_state, streaming_output],
     )
 
 demo.launch(share=True)

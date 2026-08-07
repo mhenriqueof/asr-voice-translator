@@ -28,13 +28,14 @@ SILENCE_RMS_THRESHOLD = 0.02
 @dataclass
 class StreamState:
     """
-    Holds the accumulated audio buffer and silence tracking between
-    consecutive calls to AudioStreamer.push_chunk(). Meant to be carried
-    across calls (e.g. as Gradio's gr.State).
+    Holds the accumulated audio buffer, silence tracking, and transcribed
+    text between consecutive calls to AudioStreamer.push_chunk(). Meant to
+    be carried across calls (e.g. as Gradio's gr.State).
     """
 
     buffer: np.ndarray = field(default_factory=lambda: np.empty((0,), dtype=np.float32))
     silence_duration_s: float = 0.0
+    accumulated_text: str = ""
 
 
 class AudioStreamer:
@@ -59,7 +60,7 @@ class AudioStreamer:
 
     def push_chunk(
         self, state: StreamState, chunk: np.ndarray, chunk_duration_s: float
-    ) -> tuple[StreamState, str | None]:
+    ) -> tuple[StreamState, str]:
         """
         Add a new audio chunk to the buffer and decide whether to close
         and transcribe it.
@@ -71,8 +72,8 @@ class AudioStreamer:
                 track accumulated silence across calls.
 
         Returns:
-            A tuple of (updated_state, text). text is None when the
-            buffer is still accumulating (nothing to transcribe yet).
+            A tuple of (updated_state, accumulated_text). accumulated_text
+            reflects everything transcribed so far in this session.
         """
         buffer = np.concatenate([state.buffer, chunk])
 
@@ -90,11 +91,20 @@ class AudioStreamer:
 
         if enough_audio and (silence_closed or force_closed):
             text = self._transcribe_chunk(buffer)
-            new_state = StreamState()  # reset for the next chunk
-            return new_state, (text or None)
+            accumulated_text = (
+                f"{state.accumulated_text} {text}".strip()
+                if text
+                else state.accumulated_text
+            )
+            new_state = StreamState(accumulated_text=accumulated_text)
+            return new_state, accumulated_text
 
-        new_state = StreamState(buffer=buffer, silence_duration_s=silence_duration_s)
-        return new_state, None
+        new_state = StreamState(
+            buffer=buffer,
+            silence_duration_s=silence_duration_s,
+            accumulated_text=state.accumulated_text,
+        )
+        return new_state, state.accumulated_text
 
     def _transcribe_chunk(self, audio_chunk: np.ndarray) -> str:
         """Run faster-whisper on a single accumulated audio chunk."""
@@ -103,5 +113,7 @@ class AudioStreamer:
             language=self.source_language,
             vad_filter=True,
         )
-        text = " ".join(segment.text.strip() for segment in segments).strip()
+        segments_list = list(segments)  # consume the generator once, log it
+
+        text = " ".join(segment.text.strip() for segment in segments_list).strip()
         return text

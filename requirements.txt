@@ -11,6 +11,7 @@ sentencepiece>=0.1.99
 gradio==5.9.1
 pydantic>=2.0.0,<2.10.0
 faster-whisper==1.2.1
+scipy==1.17.1
 
 # Dev
 black>=24.0.0
