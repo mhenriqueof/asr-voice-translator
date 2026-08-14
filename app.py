@@ -155,6 +155,18 @@ def clear_streaming_state() -> tuple[StreamState, str]:
     return StreamState(), ""
 
 
+def flush_streaming_buffer(
+    stream_state: StreamState | None,
+) -> tuple[StreamState, str]:
+    """
+    Force-transcribe any remaining buffered audio when the user stops
+    recording, so trailing speech isn't silently dropped.
+    """
+    state = stream_state or StreamState()
+    updated_state, accumulated_text = streamer.flush(state)
+    return updated_state, accumulated_text
+
+
 # ---------------------------------------------------------------------------
 # Gradio UI
 # ---------------------------------------------------------------------------
@@ -251,6 +263,12 @@ with gr.Blocks(title=APP_TITLE) as demo:  # type: ignore
     stream_audio_input.start_recording(
         fn=clear_streaming_state,
         inputs=[],
+        outputs=[stream_state, streaming_output],
+    )
+
+    stream_audio_input.stop_recording(
+        fn=flush_streaming_buffer,
+        inputs=[stream_state],
         outputs=[stream_state, streaming_output],
     )
 

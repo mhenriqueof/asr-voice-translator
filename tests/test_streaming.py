@@ -184,3 +184,36 @@ def test_push_chunk_accumulates_text_across_multiple_closed_chunks():
     state, _ = streamer.push_chunk(state, loud_chunk, chunk_duration_s=0.15)
     state, text = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.05)
     assert text == "hello world"
+
+
+# ---------------------------------------------------------------------------
+# flush
+# ---------------------------------------------------------------------------
+
+
+def test_flush_transcribes_remaining_buffer():
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = ([_make_segment("trailing")], MagicMock())
+    streamer = AudioStreamer(mock_model, source_language=None)
+
+    state = StreamState(
+        buffer=np.full(100, 0.5, dtype=np.float32),
+        accumulated_text="hello",
+    )
+
+    new_state, text = streamer.flush(state)
+
+    assert text == "hello trailing"
+    assert new_state.accumulated_text == "hello trailing"
+    assert len(new_state.buffer) == 0
+
+
+def test_flush_with_empty_buffer_returns_unchanged_state():
+    mock_model = MagicMock()
+    streamer = AudioStreamer(mock_model, source_language=None)
+
+    state = StreamState(accumulated_text="hello")
+    new_state, text = streamer.flush(state)
+
+    assert text == "hello"
+    mock_model.transcribe.assert_not_called()

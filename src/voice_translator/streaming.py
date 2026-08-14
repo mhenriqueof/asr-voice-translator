@@ -117,3 +117,27 @@ class AudioStreamer:
 
         text = " ".join(segment.text.strip() for segment in segments_list).strip()
         return text
+
+    def flush(self, state: StreamState) -> tuple[StreamState, str]:
+        """
+        Force-transcribe whatever audio remains in the buffer, regardless
+        of silence or duration thresholds. Meant to be called when the
+        user stops recording, so trailing speech isn't lost.
+
+        Args:
+            state: The current accumulated state.
+
+        Returns:
+            A tuple of (reset_state, accumulated_text).
+        """
+        if len(state.buffer) == 0:
+            return state, state.accumulated_text
+
+        text = self._transcribe_chunk(state.buffer)
+        accumulated_text = (
+            f"{state.accumulated_text} {text}".strip()
+            if text
+            else state.accumulated_text
+        )
+        new_state = StreamState(accumulated_text=accumulated_text)
+        return new_state, accumulated_text
