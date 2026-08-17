@@ -19,7 +19,6 @@ from voice_translator.config import (
     APP_TITLE,
     DEFAULT_SOURCE_LANGUAGE,
     DEFAULT_TARGET_LANGUAGE,
-    DEFAULT_WHISPER_LANGUAGE,
     STREAM_SAMPLE_RATE,
     SUPPORTED_LANGUAGES,
     WHISPER_LANGUAGE_CODES,
@@ -45,10 +44,7 @@ logger.info("Models loaded successfully.")
 # Streaming setup (once at startup, reuses the same ASR model)
 # ---------------------------------------------------------------------------
 
-streamer = AudioStreamer(
-    model=pipeline_ctx["asr"],
-    source_language=DEFAULT_WHISPER_LANGUAGE,
-)
+streamer = AudioStreamer(model=pipeline_ctx["asr"])
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +64,14 @@ def on_language_change(source: str, target: str) -> None:
 
     src_code = SUPPORTED_LANGUAGES[source]
     tgt_code = SUPPORTED_LANGUAGES[target]
+
+    logger.info(
+        "on_language_change: source=%r->%r target=%r->%r",
+        source,
+        src_code,
+        target,
+        tgt_code,
+    )
 
     logger.info("Language pair changed to %s -> %s.", src_code, tgt_code)
     pipeline_ctx = build_pipeline(
@@ -119,6 +123,7 @@ def process_audio(
 def process_streaming_chunk(
     stream_state: StreamState | None,
     new_chunk: tuple[int, np.ndarray] | None,
+    source_language_name: str,
 ) -> tuple[StreamState, str]:
     """
     Handle one incoming audio chunk from Gradio's streaming microphone.
@@ -127,6 +132,8 @@ def process_streaming_chunk(
         stream_state: Buffer state carried between calls (None on first call).
         new_chunk: (sample_rate, audio_array) as delivered by Gradio, or None
             when the stream stops.
+        source_language_name: Display name of the source language selected
+            in the dropdown (e.g. 'Português').
 
     Returns:
         A tuple of (updated_state, accumulated_text) to display.
@@ -136,6 +143,8 @@ def process_streaming_chunk(
     if new_chunk is None:
         return state, state.accumulated_text
 
+    whisper_language = WHISPER_LANGUAGE_CODES[source_language_name]
+
     sample_rate, audio_array = new_chunk
     audio_float = audio_array.astype(np.float32) / 32768.0
 
@@ -144,7 +153,7 @@ def process_streaming_chunk(
 
     chunk_duration_s = len(audio_float) / STREAM_SAMPLE_RATE
     updated_state, accumulated_text = streamer.push_chunk(
-        state, audio_float, chunk_duration_s
+        state, audio_float, chunk_duration_s, source_language=whisper_language
     )
 
     return updated_state, accumulated_text
@@ -157,13 +166,17 @@ def clear_streaming_state() -> tuple[StreamState, str]:
 
 def flush_streaming_buffer(
     stream_state: StreamState | None,
+    source_language_name: str,
 ) -> tuple[StreamState, str]:
     """
     Force-transcribe any remaining buffered audio when the user stops
     recording, so trailing speech isn't silently dropped.
     """
     state = stream_state or StreamState()
-    updated_state, accumulated_text = streamer.flush(state)
+    whisper_language = WHISPER_LANGUAGE_CODES[source_language_name]
+    updated_state, accumulated_text = streamer.flush(
+        state, source_language=whisper_language
+    )
     return updated_state, accumulated_text
 
 
@@ -256,7 +269,7 @@ with gr.Blocks(title=APP_TITLE) as demo:  # type: ignore
 
     stream_audio_input.stream(
         fn=process_streaming_chunk,
-        inputs=[stream_state, stream_audio_input],
+        inputs=[stream_state, stream_audio_input, source_dropdown],
         outputs=[stream_state, streaming_output],
     )
 
@@ -268,7 +281,7 @@ with gr.Blocks(title=APP_TITLE) as demo:  # type: ignore
 
     stream_audio_input.stop_recording(
         fn=flush_streaming_buffer,
-        inputs=[stream_state],
+        inputs=[stream_state, source_dropdown],
         outputs=[stream_state, streaming_output],
     )
 

@@ -46,9 +46,9 @@ def test_transcribe_chunk_joins_segments():
         [_make_segment(" Hello "), _make_segment("world ")],
         MagicMock(),
     )
-    streamer = AudioStreamer(mock_model, source_language="en")
+    streamer = AudioStreamer(mock_model)
 
-    result = streamer._transcribe_chunk(np.zeros(1600, dtype=np.float32))
+    result = streamer._transcribe_chunk(np.zeros(1600, dtype=np.float32), "en")
 
     assert result == "Hello world"
 
@@ -56,13 +56,24 @@ def test_transcribe_chunk_joins_segments():
 def test_transcribe_chunk_passes_vad_filter_and_language():
     mock_model = MagicMock()
     mock_model.transcribe.return_value = ([], MagicMock())
-    streamer = AudioStreamer(mock_model, source_language="pt")
+    streamer = AudioStreamer(mock_model)
 
-    streamer._transcribe_chunk(np.zeros(1600, dtype=np.float32))
+    streamer._transcribe_chunk(np.zeros(1600, dtype=np.float32), "pt")
 
     call_kwargs = mock_model.transcribe.call_args.kwargs
     assert call_kwargs["vad_filter"] is True
     assert call_kwargs["language"] == "pt"
+
+
+def test_transcribe_chunk_defaults_language_to_none():
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = ([], MagicMock())
+    streamer = AudioStreamer(mock_model)
+
+    streamer._transcribe_chunk(np.zeros(1600, dtype=np.float32))
+
+    call_kwargs = mock_model.transcribe.call_args.kwargs
+    assert call_kwargs["language"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -74,10 +85,12 @@ def test_transcribe_chunk_passes_vad_filter_and_language():
 @patch("voice_translator.streaming.MIN_CHUNK_DURATION_S", 0.2)
 def test_push_chunk_keeps_accumulating_below_min_duration():
     mock_model = MagicMock()
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     loud_chunk = np.full(5, 0.5, dtype=np.float32)  # above silence threshold
-    state, text = streamer.push_chunk(StreamState(), loud_chunk, chunk_duration_s=0.05)
+    state, text = streamer.push_chunk(
+        StreamState(), loud_chunk, chunk_duration_s=0.05, source_language="pt"
+    )
 
     assert text == ""  # nothing transcribed yet
     assert len(state.buffer) == 5
@@ -90,21 +103,29 @@ def test_push_chunk_keeps_accumulating_below_min_duration():
 def test_push_chunk_closes_after_enough_silence():
     mock_model = MagicMock()
     mock_model.transcribe.return_value = ([_make_segment("hi")], MagicMock())
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     loud_chunk = np.full(15, 0.5, dtype=np.float32)  # 0.15s at rate=100, past min
     silent_chunk = np.zeros(5, dtype=np.float32)
 
-    state, text = streamer.push_chunk(StreamState(), loud_chunk, chunk_duration_s=0.15)
+    state, text = streamer.push_chunk(
+        StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="pt"
+    )
     assert text == ""  # enough audio, but no silence yet
 
-    state, text = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.05)
+    state, text = streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
+    )
     assert text == ""  # 0.05s of silence, below the 0.15s threshold
 
-    state, text = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.05)
+    state, text = streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
+    )
     assert text == ""  # 0.10s of silence, still below 0.15s
 
-    state, text = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.05)
+    state, text = streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
+    )
     assert text == "hi"  # 0.15s of silence reached: chunk closes
     assert state.accumulated_text == "hi"
     assert len(state.buffer) == 0  # buffer resets after closing
@@ -117,14 +138,18 @@ def test_push_chunk_closes_after_enough_silence():
 def test_push_chunk_force_closes_at_max_duration():
     mock_model = MagicMock()
     mock_model.transcribe.return_value = ([_make_segment("forced")], MagicMock())
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     loud_chunk = np.full(10, 0.5, dtype=np.float32)  # 0.10s per chunk at rate=100
 
-    state, text = streamer.push_chunk(StreamState(), loud_chunk, chunk_duration_s=0.10)
+    state, text = streamer.push_chunk(
+        StreamState(), loud_chunk, chunk_duration_s=0.10, source_language="pt"
+    )
     assert text == ""  # 0.10s accumulated, below 0.15s max
 
-    state, text = streamer.push_chunk(state, loud_chunk, chunk_duration_s=0.10)
+    state, text = streamer.push_chunk(
+        state, loud_chunk, chunk_duration_s=0.10, source_language="pt"
+    )
     assert text == "forced"  # 0.20s accumulated, past 0.15s max: force closed
 
 
@@ -134,13 +159,17 @@ def test_push_chunk_force_closes_at_max_duration():
 def test_push_chunk_keeps_previous_text_when_transcription_is_empty():
     mock_model = MagicMock()
     mock_model.transcribe.return_value = ([], MagicMock())  # VAD removed everything
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     loud_chunk = np.full(15, 0.5, dtype=np.float32)
     silent_chunk = np.zeros(5, dtype=np.float32)
 
-    state, _ = streamer.push_chunk(StreamState(), loud_chunk, chunk_duration_s=0.15)
-    state, text = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.05)
+    state, _ = streamer.push_chunk(
+        StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="pt"
+    )
+    state, text = streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
+    )
 
     assert text == ""  # empty transcription: accumulated text stays empty
     assert state.accumulated_text == ""
@@ -149,17 +178,23 @@ def test_push_chunk_keeps_previous_text_when_transcription_is_empty():
 
 def test_push_chunk_resets_silence_counter_on_new_speech():
     mock_model = MagicMock()
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     loud_chunk = np.full(1600, 0.5, dtype=np.float32)
     silent_chunk = np.zeros(1600, dtype=np.float32)
 
-    state, _ = streamer.push_chunk(StreamState(), loud_chunk, chunk_duration_s=0.1)
-    state, _ = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.1)
+    state, _ = streamer.push_chunk(
+        StreamState(), loud_chunk, chunk_duration_s=0.1, source_language="pt"
+    )
+    state, _ = streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.1, source_language="pt"
+    )
     assert state.silence_duration_s == 0.1
 
     # speech resumes: silence counter must reset to 0
-    state, _ = streamer.push_chunk(state, loud_chunk, chunk_duration_s=0.1)
+    state, _ = streamer.push_chunk(
+        state, loud_chunk, chunk_duration_s=0.1, source_language="pt"
+    )
     assert state.silence_duration_s == 0.0
 
 
@@ -168,22 +203,53 @@ def test_push_chunk_resets_silence_counter_on_new_speech():
 @patch("voice_translator.streaming.SILENCE_DURATION_S", 0.05)
 def test_push_chunk_accumulates_text_across_multiple_closed_chunks():
     mock_model = MagicMock()
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     loud_chunk = np.full(15, 0.5, dtype=np.float32)
     silent_chunk = np.zeros(5, dtype=np.float32)
 
     # first sentence
     mock_model.transcribe.return_value = ([_make_segment("hello")], MagicMock())
-    state, _ = streamer.push_chunk(StreamState(), loud_chunk, chunk_duration_s=0.15)
-    state, text = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.05)
+    state, _ = streamer.push_chunk(
+        StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="en"
+    )
+    state, text = streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.05, source_language="en"
+    )
     assert text == "hello"
 
     # second sentence, should append to the first
     mock_model.transcribe.return_value = ([_make_segment("world")], MagicMock())
-    state, _ = streamer.push_chunk(state, loud_chunk, chunk_duration_s=0.15)
-    state, text = streamer.push_chunk(state, silent_chunk, chunk_duration_s=0.05)
+    state, _ = streamer.push_chunk(
+        state, loud_chunk, chunk_duration_s=0.15, source_language="en"
+    )
+    state, text = streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.05, source_language="en"
+    )
     assert text == "hello world"
+
+
+@patch("voice_translator.streaming.STREAM_SAMPLE_RATE", 100)
+@patch("voice_translator.streaming.MIN_CHUNK_DURATION_S", 0.1)
+@patch("voice_translator.streaming.SILENCE_DURATION_S", 0.05)
+def test_push_chunk_uses_source_language_per_call():
+    """Different calls can use different languages (dropdown changed mid-session)."""
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = ([_make_segment("bonjour")], MagicMock())
+    streamer = AudioStreamer(mock_model)
+
+    loud_chunk = np.full(15, 0.5, dtype=np.float32)
+    silent_chunk = np.zeros(5, dtype=np.float32)
+
+    state, _ = streamer.push_chunk(
+        StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="fr"
+    )
+    streamer.push_chunk(
+        state, silent_chunk, chunk_duration_s=0.05, source_language="fr"
+    )
+
+    call_kwargs = mock_model.transcribe.call_args.kwargs
+    assert call_kwargs["language"] == "fr"
 
 
 # ---------------------------------------------------------------------------
@@ -194,14 +260,14 @@ def test_push_chunk_accumulates_text_across_multiple_closed_chunks():
 def test_flush_transcribes_remaining_buffer():
     mock_model = MagicMock()
     mock_model.transcribe.return_value = ([_make_segment("trailing")], MagicMock())
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     state = StreamState(
         buffer=np.full(100, 0.5, dtype=np.float32),
         accumulated_text="hello",
     )
 
-    new_state, text = streamer.flush(state)
+    new_state, text = streamer.flush(state, source_language="pt")
 
     assert text == "hello trailing"
     assert new_state.accumulated_text == "hello trailing"
@@ -210,10 +276,10 @@ def test_flush_transcribes_remaining_buffer():
 
 def test_flush_with_empty_buffer_returns_unchanged_state():
     mock_model = MagicMock()
-    streamer = AudioStreamer(mock_model, source_language=None)
+    streamer = AudioStreamer(mock_model)
 
     state = StreamState(accumulated_text="hello")
-    new_state, text = streamer.flush(state)
+    new_state, text = streamer.flush(state, source_language="pt")
 
     assert text == "hello"
     mock_model.transcribe.assert_not_called()

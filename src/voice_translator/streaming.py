@@ -43,15 +43,10 @@ class AudioStreamer:
     Accumulates audio chunks pushed from an external source (e.g. Gradio's
     streaming microphone component) and decides when a chunk contains
     enough speech, followed by enough silence, to close and transcribe it.
-
-    This class does not capture audio itself — it only processes chunks
-    handed to it via push_chunk(), so it works the same way whether the
-    audio originates from a local microphone or a user's browser.
     """
 
-    def __init__(self, model: WhisperModel, source_language: str | None = None):
+    def __init__(self, model: WhisperModel):
         self.model = model
-        self.source_language = source_language
 
     @staticmethod
     def _rms(chunk: np.ndarray) -> float:
@@ -59,7 +54,11 @@ class AudioStreamer:
         return float(np.sqrt(np.mean(np.square(chunk))))
 
     def push_chunk(
-        self, state: StreamState, chunk: np.ndarray, chunk_duration_s: float
+        self,
+        state: StreamState,
+        chunk: np.ndarray,
+        chunk_duration_s: float,
+        source_language: str | None = None,
     ) -> tuple[StreamState, str]:
         """
         Add a new audio chunk to the buffer and decide whether to close
@@ -68,12 +67,12 @@ class AudioStreamer:
         Args:
             state: The accumulated state from the previous call.
             chunk: New audio samples (mono, float32, at STREAM_SAMPLE_RATE).
-            chunk_duration_s: Duration of this chunk in seconds, used to
-                track accumulated silence across calls.
+            chunk_duration_s: Duration of this chunk in seconds.
+            source_language: ISO 639-1 language code for transcription
+                (e.g. 'pt', 'en'). If None, Whisper auto-detects.
 
         Returns:
-            A tuple of (updated_state, accumulated_text). accumulated_text
-            reflects everything transcribed so far in this session.
+            A tuple of (updated_state, accumulated_text).
         """
         buffer = np.concatenate([state.buffer, chunk])
 
@@ -90,7 +89,7 @@ class AudioStreamer:
         force_closed = len(buffer) >= max_samples
 
         if enough_audio and (silence_closed or force_closed):
-            text = self._transcribe_chunk(buffer)
+            text = self._transcribe_chunk(buffer, source_language)
             accumulated_text = (
                 f"{state.accumulated_text} {text}".strip()
                 if text
@@ -106,34 +105,16 @@ class AudioStreamer:
         )
         return new_state, state.accumulated_text
 
-    def _transcribe_chunk(self, audio_chunk: np.ndarray) -> str:
-        """Run faster-whisper on a single accumulated audio chunk."""
-        segments, _ = self.model.transcribe(
-            audio_chunk,
-            language=self.source_language,
-            vad_filter=True,
-        )
-        segments_list = list(segments)  # consume the generator once, log it
-
-        text = " ".join(segment.text.strip() for segment in segments_list).strip()
-        return text
-
-    def flush(self, state: StreamState) -> tuple[StreamState, str]:
+    def flush(
+        self, state: StreamState, source_language: str | None = None
+    ) -> tuple[StreamState, str]:
         """
-        Force-transcribe whatever audio remains in the buffer, regardless
-        of silence or duration thresholds. Meant to be called when the
-        user stops recording, so trailing speech isn't lost.
-
-        Args:
-            state: The current accumulated state.
-
-        Returns:
-            A tuple of (reset_state, accumulated_text).
+        Force-transcribe whatever audio remains in the buffer.
         """
         if len(state.buffer) == 0:
             return state, state.accumulated_text
 
-        text = self._transcribe_chunk(state.buffer)
+        text = self._transcribe_chunk(state.buffer, source_language)
         accumulated_text = (
             f"{state.accumulated_text} {text}".strip()
             if text
@@ -141,3 +122,15 @@ class AudioStreamer:
         )
         new_state = StreamState(accumulated_text=accumulated_text)
         return new_state, accumulated_text
+
+    def _transcribe_chunk(
+        self, audio_chunk: np.ndarray, source_language: str | None = None
+    ) -> str:
+        """Run faster-whisper on a single accumulated audio chunk."""
+        segments, _ = self.model.transcribe(
+            audio_chunk,
+            language=source_language,
+            vad_filter=True,
+        )
+        text = " ".join(segment.text.strip() for segment in segments).strip()
+        return text
