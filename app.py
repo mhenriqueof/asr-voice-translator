@@ -25,6 +25,7 @@ from voice_translator.config import (
 )
 from voice_translator.pipeline import build_pipeline, run_pipeline
 from voice_translator.streaming import AudioStreamer, StreamState
+from voice_translator.translation import translate
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ streamer = AudioStreamer(model=pipeline_ctx["asr"])
 
 
 # ---------------------------------------------------------------------------
-# Gradio event handlers — batch mode (existing)
+# Gradio event handlers — batch mode
 # ---------------------------------------------------------------------------
 
 
@@ -119,11 +120,40 @@ def process_audio(
 # ---------------------------------------------------------------------------
 
 
+def _translate_new_text(
+    state: StreamState,
+    new_text: str,
+    source_language_name: str,
+    target_language_name: str,
+) -> str:
+    """
+    Translate newly transcribed text (if any) and append it to the
+    accumulated translation, without mutating the given state.
+
+    Returns:
+        The updated accumulated translation string.
+    """
+    if not new_text:
+        return state.accumulated_translation
+
+    nllb_source = SUPPORTED_LANGUAGES[source_language_name]
+    nllb_target = SUPPORTED_LANGUAGES[target_language_name]
+    new_translation = translate(
+        pipeline_ctx["translation_model"],
+        pipeline_ctx["translation_tokenizer"],
+        new_text,
+        source_language=nllb_source,
+        target_language=nllb_target,
+    )
+    return f"{state.accumulated_translation} {new_translation}".strip()
+
+
 def process_streaming_chunk(
     stream_state: StreamState | None,
     new_chunk: tuple[int, np.ndarray] | None,
     source_language_name: str,
-) -> tuple[StreamState, str]:
+    target_language_name: str,
+) -> tuple[StreamState, str, str]:
     """
     Handle one incoming audio chunk from Gradio's streaming microphone.
 
@@ -131,16 +161,16 @@ def process_streaming_chunk(
         stream_state: Buffer state carried between calls (None on first call).
         new_chunk: (sample_rate, audio_array) as delivered by Gradio, or None
             when the stream stops.
-        source_language_name: Display name of the source language selected
-            in the dropdown (e.g. 'Português').
+        source_language_name: Display name of the source language.
+        target_language_name: Display name of the target language.
 
     Returns:
-        A tuple of (updated_state, accumulated_text) to display.
+        A tuple of (updated_state, accumulated_transcription, accumulated_translation).
     """
     state = stream_state or StreamState()
 
     if new_chunk is None:
-        return state, state.accumulated_text
+        return state, state.accumulated_text, state.accumulated_translation
 
     whisper_language = WHISPER_LANGUAGE_CODES[source_language_name]
 
@@ -151,32 +181,42 @@ def process_streaming_chunk(
         audio_float = resample_poly(audio_float, STREAM_SAMPLE_RATE, sample_rate)
 
     chunk_duration_s = len(audio_float) / STREAM_SAMPLE_RATE
-    updated_state, accumulated_text = streamer.push_chunk(
+    updated_state, accumulated_text, new_text = streamer.push_chunk(
         state, audio_float, chunk_duration_s, source_language=whisper_language
     )
 
-    return updated_state, accumulated_text
+    accumulated_translation = _translate_new_text(
+        updated_state, new_text, source_language_name, target_language_name
+    )
+
+    return updated_state, accumulated_text, accumulated_translation
 
 
 def flush_streaming_buffer(
     stream_state: StreamState | None,
     source_language_name: str,
-) -> tuple[StreamState, str]:
+    target_language_name: str,
+) -> tuple[StreamState, str, str]:
     """
-    Force-transcribe any remaining buffered audio when the user stops
-    recording, so trailing speech isn't silently dropped.
+    Force-transcribe (and translate) any remaining buffered audio when
+    the user stops recording, so trailing speech isn't silently dropped.
     """
     state = stream_state or StreamState()
     whisper_language = WHISPER_LANGUAGE_CODES[source_language_name]
-    updated_state, accumulated_text = streamer.flush(
+    updated_state, accumulated_text, new_text = streamer.flush(
         state, source_language=whisper_language
     )
-    return updated_state, accumulated_text
+
+    accumulated_translation = _translate_new_text(
+        updated_state, new_text, source_language_name, target_language_name
+    )
+
+    return updated_state, accumulated_text, accumulated_translation
 
 
-def clear_streaming_state() -> tuple[StreamState, str]:
+def clear_streaming_state() -> tuple[StreamState, str, str]:
     """Reset streaming state when the user starts a new recording session."""
-    return StreamState(), ""
+    return StreamState(), "", ""
 
 
 # ---------------------------------------------------------------------------
@@ -212,11 +252,17 @@ with gr.Blocks(title=APP_TITLE) as demo:
         label="Speak now",
     )
 
-    streaming_output = gr.Textbox(
-        label="Live Transcription",
-        placeholder="Transcription will appear here as you speak...",
-        lines=4,
-    )
+    with gr.Row():
+        streaming_output = gr.Textbox(
+            label="Live Transcription",
+            placeholder="Transcription will appear here as you speak...",
+            lines=4,
+        )
+        streaming_translation_output = gr.Textbox(
+            label="Live Translation",
+            placeholder="Translation will appear here as you speak...",
+            lines=4,
+        )
 
     stream_state = gr.State(value=StreamState())
 
@@ -276,20 +322,20 @@ with gr.Blocks(title=APP_TITLE) as demo:
 
     stream_audio_input.stream(
         fn=process_streaming_chunk,
-        inputs=[stream_state, stream_audio_input, source_dropdown],
-        outputs=[stream_state, streaming_output],
+        inputs=[stream_state, stream_audio_input, source_dropdown, target_dropdown],
+        outputs=[stream_state, streaming_output, streaming_translation_output],
     )
 
     stream_audio_input.start_recording(
         fn=clear_streaming_state,
         inputs=[],
-        outputs=[stream_state, streaming_output],
+        outputs=[stream_state, streaming_output, streaming_translation_output],
     )
 
     stream_audio_input.stop_recording(
         fn=flush_streaming_buffer,
-        inputs=[stream_state, source_dropdown],
-        outputs=[stream_state, streaming_output],
+        inputs=[stream_state, source_dropdown, target_dropdown],
+        outputs=[stream_state, streaming_output, streaming_translation_output],
     )
 
     # --- events: batch mode ---

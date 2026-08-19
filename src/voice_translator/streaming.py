@@ -28,14 +28,15 @@ SILENCE_RMS_THRESHOLD = 0.02
 @dataclass
 class StreamState:
     """
-    Holds the accumulated audio buffer, silence tracking, and transcribed
-    text between consecutive calls to AudioStreamer.push_chunk(). Meant to
-    be carried across calls (e.g. as Gradio's gr.State).
+    Holds the accumulated audio buffer, silence tracking, transcribed
+    text, and translated text between consecutive calls. Meant to be
+    carried across calls (e.g. as Gradio's gr.State).
     """
 
     buffer: np.ndarray = field(default_factory=lambda: np.empty((0,), dtype=np.float32))
     silence_duration_s: float = 0.0
     accumulated_text: str = ""
+    accumulated_translation: str = ""
 
 
 class AudioStreamer:
@@ -59,20 +60,16 @@ class AudioStreamer:
         chunk: np.ndarray,
         chunk_duration_s: float,
         source_language: str | None = None,
-    ) -> tuple[StreamState, str]:
+    ) -> tuple[StreamState, str, str]:
         """
         Add a new audio chunk to the buffer and decide whether to close
         and transcribe it.
 
-        Args:
-            state: The accumulated state from the previous call.
-            chunk: New audio samples (mono, float32, at STREAM_SAMPLE_RATE).
-            chunk_duration_s: Duration of this chunk in seconds.
-            source_language: ISO 639-1 language code for transcription
-                (e.g. 'pt', 'en'). If None, Whisper auto-detects.
-
         Returns:
-            A tuple of (updated_state, accumulated_text).
+            A tuple of (updated_state, accumulated_text, new_text).
+            new_text is the text transcribed in this call specifically
+            (empty string if the buffer didn't close this time, or if
+            the closed chunk had no speech).
         """
         buffer = np.concatenate([state.buffer, chunk])
 
@@ -89,39 +86,49 @@ class AudioStreamer:
         force_closed = len(buffer) >= max_samples
 
         if enough_audio and (silence_closed or force_closed):
-            text = self._transcribe_chunk(buffer, source_language)
+            new_text = self._transcribe_chunk(buffer, source_language)
             accumulated_text = (
-                f"{state.accumulated_text} {text}".strip()
-                if text
+                f"{state.accumulated_text} {new_text}".strip()
+                if new_text
                 else state.accumulated_text
             )
-            new_state = StreamState(accumulated_text=accumulated_text)
-            return new_state, accumulated_text
+            new_state = StreamState(
+                accumulated_text=accumulated_text,
+                accumulated_translation=state.accumulated_translation,
+            )
+            return new_state, accumulated_text, new_text
 
         new_state = StreamState(
             buffer=buffer,
             silence_duration_s=silence_duration_s,
             accumulated_text=state.accumulated_text,
+            accumulated_translation=state.accumulated_translation,
         )
-        return new_state, state.accumulated_text
+        return new_state, state.accumulated_text, ""
 
     def flush(
         self, state: StreamState, source_language: str | None = None
-    ) -> tuple[StreamState, str]:
+    ) -> tuple[StreamState, str, str]:
         """
         Force-transcribe whatever audio remains in the buffer.
+
+        Returns:
+            A tuple of (updated_state, accumulated_text, new_text).
         """
         if len(state.buffer) == 0:
-            return state, state.accumulated_text
+            return state, state.accumulated_text, ""
 
-        text = self._transcribe_chunk(state.buffer, source_language)
+        new_text = self._transcribe_chunk(state.buffer, source_language)
         accumulated_text = (
-            f"{state.accumulated_text} {text}".strip()
-            if text
+            f"{state.accumulated_text} {new_text}".strip()
+            if new_text
             else state.accumulated_text
         )
-        new_state = StreamState(accumulated_text=accumulated_text)
-        return new_state, accumulated_text
+        new_state = StreamState(
+            accumulated_text=accumulated_text,
+            accumulated_translation=state.accumulated_translation,
+        )
+        return new_state, accumulated_text, new_text
 
     def _transcribe_chunk(
         self, audio_chunk: np.ndarray, source_language: str | None = None

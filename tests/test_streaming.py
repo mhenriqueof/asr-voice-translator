@@ -88,11 +88,12 @@ def test_push_chunk_keeps_accumulating_below_min_duration():
     streamer = AudioStreamer(mock_model)
 
     loud_chunk = np.full(5, 0.5, dtype=np.float32)  # above silence threshold
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         StreamState(), loud_chunk, chunk_duration_s=0.05, source_language="pt"
     )
 
-    assert text == ""  # nothing transcribed yet
+    assert accumulated == ""  # nothing transcribed yet
+    assert new_text == ""
     assert len(state.buffer) == 5
     mock_model.transcribe.assert_not_called()
 
@@ -108,25 +109,26 @@ def test_push_chunk_closes_after_enough_silence():
     loud_chunk = np.full(15, 0.5, dtype=np.float32)  # 0.15s at rate=100, past min
     silent_chunk = np.zeros(5, dtype=np.float32)
 
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="pt"
     )
-    assert text == ""  # enough audio, but no silence yet
+    assert accumulated == "" and new_text == ""  # enough audio, but no silence yet
 
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
     )
-    assert text == ""  # 0.05s of silence, below the 0.15s threshold
+    assert accumulated == "" and new_text == ""  # 0.05s silence, below 0.15s
 
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
     )
-    assert text == ""  # 0.10s of silence, still below 0.15s
+    assert accumulated == "" and new_text == ""  # 0.10s silence, still below 0.15s
 
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
     )
-    assert text == "hi"  # 0.15s of silence reached: chunk closes
+    assert accumulated == "hi"  # 0.15s of silence reached: chunk closes
+    assert new_text == "hi"  # this call is the one that produced new text
     assert state.accumulated_text == "hi"
     assert len(state.buffer) == 0  # buffer resets after closing
 
@@ -142,15 +144,16 @@ def test_push_chunk_force_closes_at_max_duration():
 
     loud_chunk = np.full(10, 0.5, dtype=np.float32)  # 0.10s per chunk at rate=100
 
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         StreamState(), loud_chunk, chunk_duration_s=0.10, source_language="pt"
     )
-    assert text == ""  # 0.10s accumulated, below 0.15s max
+    assert accumulated == "" and new_text == ""  # 0.10s accumulated, below 0.15s max
 
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         state, loud_chunk, chunk_duration_s=0.10, source_language="pt"
     )
-    assert text == "forced"  # 0.20s accumulated, past 0.15s max: force closed
+    assert accumulated == "forced"  # 0.20s accumulated, past 0.15s max: force closed
+    assert new_text == "forced"
 
 
 @patch("voice_translator.streaming.STREAM_SAMPLE_RATE", 100)
@@ -164,14 +167,15 @@ def test_push_chunk_keeps_previous_text_when_transcription_is_empty():
     loud_chunk = np.full(15, 0.5, dtype=np.float32)
     silent_chunk = np.zeros(5, dtype=np.float32)
 
-    state, _ = streamer.push_chunk(
+    state, _, _ = streamer.push_chunk(
         StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="pt"
     )
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         state, silent_chunk, chunk_duration_s=0.05, source_language="pt"
     )
 
-    assert text == ""  # empty transcription: accumulated text stays empty
+    assert accumulated == ""  # empty transcription: accumulated text stays empty
+    assert new_text == ""
     assert state.accumulated_text == ""
     assert len(state.buffer) == 0  # buffer still resets even with empty text
 
@@ -183,16 +187,16 @@ def test_push_chunk_resets_silence_counter_on_new_speech():
     loud_chunk = np.full(1600, 0.5, dtype=np.float32)
     silent_chunk = np.zeros(1600, dtype=np.float32)
 
-    state, _ = streamer.push_chunk(
+    state, _, _ = streamer.push_chunk(
         StreamState(), loud_chunk, chunk_duration_s=0.1, source_language="pt"
     )
-    state, _ = streamer.push_chunk(
+    state, _, _ = streamer.push_chunk(
         state, silent_chunk, chunk_duration_s=0.1, source_language="pt"
     )
     assert state.silence_duration_s == 0.1
 
     # speech resumes: silence counter must reset to 0
-    state, _ = streamer.push_chunk(
+    state, _, _ = streamer.push_chunk(
         state, loud_chunk, chunk_duration_s=0.1, source_language="pt"
     )
     assert state.silence_duration_s == 0.0
@@ -210,30 +214,32 @@ def test_push_chunk_accumulates_text_across_multiple_closed_chunks():
 
     # first sentence
     mock_model.transcribe.return_value = ([_make_segment("hello")], MagicMock())
-    state, _ = streamer.push_chunk(
+    state, _, _ = streamer.push_chunk(
         StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="en"
     )
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         state, silent_chunk, chunk_duration_s=0.05, source_language="en"
     )
-    assert text == "hello"
+    assert accumulated == "hello"
+    assert new_text == "hello"
 
     # second sentence, should append to the first
     mock_model.transcribe.return_value = ([_make_segment("world")], MagicMock())
-    state, _ = streamer.push_chunk(
+    state, _, _ = streamer.push_chunk(
         state, loud_chunk, chunk_duration_s=0.15, source_language="en"
     )
-    state, text = streamer.push_chunk(
+    state, accumulated, new_text = streamer.push_chunk(
         state, silent_chunk, chunk_duration_s=0.05, source_language="en"
     )
-    assert text == "hello world"
+    assert accumulated == "hello world"
+    assert new_text == "world"  # only the newly transcribed piece, not the full text
 
 
 @patch("voice_translator.streaming.STREAM_SAMPLE_RATE", 100)
 @patch("voice_translator.streaming.MIN_CHUNK_DURATION_S", 0.1)
 @patch("voice_translator.streaming.SILENCE_DURATION_S", 0.05)
 def test_push_chunk_uses_source_language_per_call():
-    """Different calls can use different languages (dropdown changed mid-session)."""
+    """Different calls can use different languages (e.g. dropdown changed)."""
     mock_model = MagicMock()
     mock_model.transcribe.return_value = ([_make_segment("bonjour")], MagicMock())
     streamer = AudioStreamer(mock_model)
@@ -241,7 +247,7 @@ def test_push_chunk_uses_source_language_per_call():
     loud_chunk = np.full(15, 0.5, dtype=np.float32)
     silent_chunk = np.zeros(5, dtype=np.float32)
 
-    state, _ = streamer.push_chunk(
+    state, _, _ = streamer.push_chunk(
         StreamState(), loud_chunk, chunk_duration_s=0.15, source_language="fr"
     )
     streamer.push_chunk(
@@ -267,9 +273,10 @@ def test_flush_transcribes_remaining_buffer():
         accumulated_text="hello",
     )
 
-    new_state, text = streamer.flush(state, source_language="pt")
+    new_state, accumulated, new_text = streamer.flush(state, source_language="pt")
 
-    assert text == "hello trailing"
+    assert accumulated == "hello trailing"
+    assert new_text == "trailing"
     assert new_state.accumulated_text == "hello trailing"
     assert len(new_state.buffer) == 0
 
@@ -279,7 +286,8 @@ def test_flush_with_empty_buffer_returns_unchanged_state():
     streamer = AudioStreamer(mock_model)
 
     state = StreamState(accumulated_text="hello")
-    new_state, text = streamer.flush(state, source_language="pt")
+    new_state, accumulated, new_text = streamer.flush(state, source_language="pt")
 
-    assert text == "hello"
+    assert accumulated == "hello"
+    assert new_text == ""
     mock_model.transcribe.assert_not_called()
