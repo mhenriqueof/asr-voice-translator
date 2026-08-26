@@ -10,6 +10,8 @@ from pathlib import Path
 # Ensure the src/ package is importable regardless of how the app is launched
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+import dataclasses
+
 import gradio as gr
 import numpy as np
 from scipy.signal import resample_poly
@@ -126,18 +128,21 @@ def _translate_new_text(
     source_language_name: str,
     target_language_name: str,
 ) -> str:
-    """
-    Translate newly transcribed text (if any) and append it to the
-    accumulated translation, without mutating the given state.
-
-    Returns:
-        The updated accumulated translation string.
-    """
+    logger.info(
+        "_translate_new_text called: new_text=%r source=%s target=%s",
+        new_text,
+        source_language_name,
+        target_language_name,
+    )
     if not new_text:
         return state.accumulated_translation
 
     nllb_source = SUPPORTED_LANGUAGES[source_language_name]
     nllb_target = SUPPORTED_LANGUAGES[target_language_name]
+    logger.info(
+        "Translating with nllb_source=%s nllb_target=%s", nllb_source, nllb_target
+    )
+
     new_translation = translate(
         pipeline_ctx["translation_model"],
         pipeline_ctx["translation_tokenizer"],
@@ -145,6 +150,8 @@ def _translate_new_text(
         source_language=nllb_source,
         target_language=nllb_target,
     )
+    logger.info("Translation result: %r", new_translation)
+
     return f"{state.accumulated_translation} {new_translation}".strip()
 
 
@@ -155,17 +162,7 @@ def process_streaming_chunk(
     target_language_name: str,
 ) -> tuple[StreamState, str, str]:
     """
-    Handle one incoming audio chunk from Gradio's streaming microphone.
-
-    Args:
-        stream_state: Buffer state carried between calls (None on first call).
-        new_chunk: (sample_rate, audio_array) as delivered by Gradio, or None
-            when the stream stops.
-        source_language_name: Display name of the source language.
-        target_language_name: Display name of the target language.
-
-    Returns:
-        A tuple of (updated_state, accumulated_transcription, accumulated_translation).
+    ...
     """
     state = stream_state or StreamState()
 
@@ -186,7 +183,10 @@ def process_streaming_chunk(
     )
 
     accumulated_translation = _translate_new_text(
-        updated_state, new_text, source_language_name, target_language_name
+        state, new_text, source_language_name, target_language_name
+    )
+    updated_state = dataclasses.replace(
+        updated_state, accumulated_translation=accumulated_translation
     )
 
     return updated_state, accumulated_text, accumulated_translation
@@ -198,8 +198,7 @@ def flush_streaming_buffer(
     target_language_name: str,
 ) -> tuple[StreamState, str, str]:
     """
-    Force-transcribe (and translate) any remaining buffered audio when
-    the user stops recording, so trailing speech isn't silently dropped.
+    ...
     """
     state = stream_state or StreamState()
     whisper_language = WHISPER_LANGUAGE_CODES[source_language_name]
@@ -208,7 +207,10 @@ def flush_streaming_buffer(
     )
 
     accumulated_translation = _translate_new_text(
-        updated_state, new_text, source_language_name, target_language_name
+        state, new_text, source_language_name, target_language_name
+    )
+    updated_state = dataclasses.replace(
+        updated_state, accumulated_translation=accumulated_translation
     )
 
     return updated_state, accumulated_text, accumulated_translation
