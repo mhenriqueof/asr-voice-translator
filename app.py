@@ -84,20 +84,17 @@ def on_language_change(source: str, target: str) -> dict:
 
 def process_audio(
     audio_path: str,
-    translate_audio: bool,
     source_language_name: str,
 ) -> tuple[str, str]:
     """
-    Transcribe and optionally translate the provided audio file.
+    Transcribe and translate the provided audio file.
 
     Args:
         audio_path: Path to the uploaded or recorded audio file.
-        translate_audio: Whether to translate the transcribed text.
         source_language_name: Display name of the source language (e.g. 'Português').
 
     Returns:
-        A tuple of (transcription, translation). Translation is empty string
-        if translate_audio is False.
+        A tuple of (transcription, translation).
     """
     if audio_path is None:
         return "No audio provided.", ""
@@ -107,7 +104,7 @@ def process_audio(
     result = run_pipeline(
         pipeline_ctx,
         audio_path,
-        translate_audio=translate_audio,
+        translate_audio=True,
         whisper_language=whisper_language,
     )
 
@@ -279,12 +276,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
         label="Audio Input",
     )
 
-    translate_checkbox = gr.Checkbox(
-        value=True,
-        label="Translate",
-    )
-
-    submit_btn = gr.Button("Transcribe / Translate", variant="primary")
+    submit_btn = gr.Button("Transcribe - Translate", variant="primary")
 
     with gr.Row():
         transcription_output = gr.Textbox(
@@ -344,7 +336,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
 
     submit_btn.click(
         fn=process_audio,
-        inputs=[audio_input, translate_checkbox, source_dropdown],
+        inputs=[audio_input, source_dropdown],
         outputs=[transcription_output, translation_output],
     )
 
