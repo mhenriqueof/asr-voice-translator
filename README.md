@@ -186,9 +186,7 @@ voice-translator/
 
 ---
 
-This project connects two unimodal models, speech recognition and text translation, into a single
-pipeline, rather than using a single model trained to handle multiple modalities natively. Even so, 
-building it was a valuable step towards my goal of working with true multimodal AI in the future. 
+This project connects speech recognition and machine translation into a single real-time pipeline.
 It was challenging in ways I didn't expect, making me learn a lot throughout the development process.
 
 Thanks!
