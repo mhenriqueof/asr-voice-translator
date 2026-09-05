@@ -165,7 +165,7 @@ VOICE_TRANSLATOR_DEVICE=cuda python app.py
 * Silence detection relies on a fixed RMS threshold, which may need tuning for noisy environments
   or unusual microphone setups.
 * Running on CPU means there's a small delay between speaking and seeing the transcription or
-  translation — not instant, but close to real-time.
+  translation, not instant, but close to real-time.
 
 
 ## **Project Structure**
@@ -186,7 +186,9 @@ voice-translator/
 
 ---
 
-Building it was a valuable step towards my goal of working with Multimodal AI in the future, 
-it was challenging in ways I didn't expect, making me learn a lot throughout the development process.
+This project connects two unimodal models, speech recognition and text translation, into a single
+pipeline, rather than using a single model trained to handle multiple modalities natively. Even so, 
+building it was a valuable step towards my goal of working with true multimodal AI in the future. 
+It was challenging in ways I didn't expect, making me learn a lot throughout the development process.
 
 Thanks!
