@@ -2,13 +2,13 @@
 A real-time speech transcription and translation system that transcribes and translates spoken
 language live, as you talk. Built with faster-whisper, NLLB-200 and Gradio.
 
-[Try it on Hugging Face Spaces](https://huggingface.co/spaces/mhenriqueof/voice-translator)
+**[Try it on Hugging Face Spaces - No account required](https://huggingface.co/spaces/mhenriqueof/voice-translator)** <br>
+[If you see "***This Space is sleeping due to inactivity.***", click on `Restart this Space`]
 
 
 ## **Objective**
-The goal of this project was to build a system that connects audio processing and
-natural language processing, fields I have recently studied, to apply and consolidate the
-knowledge I acquired.
+The goal of this project was to apply and consolidate what I have recently learned about audio
+processing and natural language processing, by building a system that connects the two.
 
 Beyond the core pipeline, the project was also an opportunity to practice software engineering principles,
 including code versioning, structured documentation, modular design, clean code practices and
@@ -133,7 +133,8 @@ cd voice-translator
 ### Create a Virtual Environment
 ```bash
 python -m venv venv
-source venv\Scripts\activate # on Linux/macOS: venv/bin/activate
+venv\Scripts\activate    # on Windows
+source venv/bin/activate # on Linux/macOS
 ```
 
 ### Install Dependencies
